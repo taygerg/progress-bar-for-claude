@@ -22,26 +22,39 @@ function etaText(p: Progress): string {
   return 'dauert länger als geschätzt'
 }
 
-function bar(fraction: number | null): string {
+function bar(fraction: number | null, from: number | null = fraction): string {
   const x = 4
   const y = 7
   const w = W - 8
   const h = 12
   const fw = fraction === null ? 0 : Math.max(h, w * Math.min(1, fraction))
   const kx = x + fw
+  // Glides from the last shown count to this one (once, when the count changes).
+  const ffw = from === null || fraction === null ? fw : Math.max(h, w * Math.min(1, from))
+  const glide =
+    ffw === fw
+      ? ''
+      : `<style>
+    .fl,.hi,.kn{animation:.45s cubic-bezier(.32,.72,0,1) both}
+    .fl{animation-name:gw}.hi{animation-name:gh}.kn{animation-name:gk}
+    @keyframes gw{from{width:${ffw}px}}
+    @keyframes gh{from{width:${Math.max(0, ffw - 8)}px}}
+    @keyframes gk{from{transform:translateX(${ffw - fw}px)}}
+    @media (prefers-reduced-motion: reduce){.fl,.hi,.kn{animation:none}}
+  </style>`
   const fill =
     fraction === null
       ? `<rect x="${x}" y="${y}" width="120" height="${h}" rx="6" fill="url(#f)" filter="url(#g)">
            <animate attributeName="x" values="${x - 120};${x + w};${x - 120}" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1;.45 0 .55 1"/>
          </rect>`
-      : `<rect x="${x}" y="${y}" width="${fw}" height="${h}" rx="6" fill="url(#f)" filter="url(#g)">
+      : `<rect class="fl" x="${x}" y="${y}" width="${fw}" height="${h}" rx="6" fill="url(#f)" filter="url(#g)">
          </rect>
-         <rect x="${x + 4}" y="${y + 1.5}" width="${Math.max(0, fw - 8)}" height="3" rx="1.5" fill="url(#hl)"/>
-         <g transform="translate(${kx - 17} 2)">
+         <rect class="hi" x="${x + 4}" y="${y + 1.5}" width="${Math.max(0, fw - 8)}" height="3" rx="1.5" fill="url(#hl)"/>
+         <g class="kn"><g transform="translate(${kx - 17} 2)">
            <rect width="34" height="22" rx="11" fill="url(#k)" stroke="url(#ks)" stroke-width=".8"/>
            <rect x="6" y="2.5" width="22" height="6" rx="3" fill="#ffffff" opacity=".55"/>
-         </g>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+         </g></g>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${glide}
   <defs>
     <linearGradient id="t" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset="1" stop-color="#fff" stop-opacity=".10"/></linearGradient>
     <linearGradient id="ts" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".10"/><stop offset="1" stop-color="#fff" stop-opacity=".35"/></linearGradient>
@@ -103,6 +116,8 @@ function applyCounts(p: Progress, now: number, total: number, done: number, curr
     firstStartAt,
     // Only time spent while steps were actually being finished counts as work.
     workMs: newlyDone > 0 ? p.workMs + (now - (p.lastDoneAt || firstStartAt)) : p.workMs,
+    // The share shown before the last change of the count (or of the list's size).
+    prevShown: done !== p.done || total !== p.total ? (p.total ? p.done / p.total : 0) : p.prevShown,
     doneInTurn: p.doneInTurn + newlyDone,
     lastDoneAt: newlyDone > 0 ? now : p.lastDoneAt,
   }
@@ -200,7 +215,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" alignItems="center">
         {e.surface !== 'terminal' && 'Svg' in els ? (
-          <els.Svg source={bar(fraction)} alt={alt} width={W} height={H} isInteractive />
+          <els.Svg source={bar(fraction, Math.min(p.prevShown ?? fraction, 1))} alt={alt} width={W} height={H} />
         ) : (
           <Text>{'▰'.repeat(filled) + '▱'.repeat(20 - filled)}</Text>
         )}

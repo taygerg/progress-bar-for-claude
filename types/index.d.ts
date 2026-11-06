@@ -8,6 +8,8 @@ export type Progress = {
   lastDoneAt: number
   doneInTurn: number
   workMs: number
+  /** Share shown before the last change, so the bar can glide from it. */
+  prevShown?: number
 }
 
 declare module 'claude-code' {

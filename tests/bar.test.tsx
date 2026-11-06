@@ -183,3 +183,25 @@ test('TodoWrite eines Subagenten überschreibt die Hauptliste nicht', { timeoutM
   await $.tool.call({ tool: 'TodoWrite', agentId: 'sub1', todos: [todo('X', 'completed'), todo('Y', 'completed')] } as never)
   expect((await band($, 'terminal')).all).toContain('A läuft · Schritt 1 von 3')
 })
+
+test('Balken gleitet vom zuletzt gezeigten Anteil, auch wenn ein Schritt dazukommt', { timeoutMs: 60_000 }, async ($, on) => {
+  const clock = mock.clock(on, { now: 1_800_000_000_000 })
+  engine(on)
+  const quelle = async () => {
+    const ui = await ($ as any).ui.mount({ ...BAND, surface: 'desktop' })
+    const svg: any = await ui.find({ type: 'Svg' })
+    await ui.unmount()
+    return String(svg?.props?.source ?? svg?.source ?? '')
+  }
+  await $.turn.start({ text: 'los', turnId: 't1' } as never)
+  for (const s of ['A', 'B', 'C', 'D', 'E']) await $.tool.call({ tool: 'TaskCreate', subject: s, description: s } as never)
+  for (const id of ['1', '2', '3']) await $.tool.call({ tool: 'TaskUpdate', taskId: id, status: 'completed' } as never)
+  // 3 von 5 gezeigt; jetzt kommt ein Schritt dazu: 3 von 6.
+  await $.tool.call({ tool: 'TaskCreate', subject: 'F', description: 'F' } as never)
+  const q = await quelle()
+  expect(q).toContain('@keyframes gw{from{width:307.2px}}') // 3/5 von 512 px
+  expect(q).toContain('width="256"') // 3/6 von 512 px
+  // Nur die Uhr läuft: gleiche Quelle, keine neue Animation.
+  await clock.advance(61_000)
+  expect(await quelle()).toBe(q)
+})
