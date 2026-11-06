@@ -5,6 +5,8 @@ import type { Progress } from '../types'
 
 const IDLE: Progress = { isActive: false, now: 0, total: 0, done: 0, current: '', firstStartAt: 0, lastDoneAt: 0, doneInTurn: 0, workMs: 0 }
 const progress = atom({ plugin: 'glass-progress', key: 'progress' } as const, IDLE)
+// /glas-aus is remembered for the session, so a reload does not switch the backdrop back on.
+const backdropOff = atom({ plugin: 'glass-progress', key: 'backdropOff' } as const, false)
 
 type Task = { id: string; subject: string; status: string }
 
@@ -99,6 +101,26 @@ function pill(fraction: number, from: number, current: string, right: string): s
 </svg>`
 }
 
+// Dark baby-blue gradient behind the whole window (light variant for a light theme);
+// the desktop app frosts its own panels over it.
+const BACKDROP = `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+<style>
+.g0{stop-color:#0F141E}.g1{stop-color:#112437}.g2{stop-color:#16395A}
+.l1{stop-color:#7FBAF0}.l2{stop-color:#2A74BE}.l3{stop-color:#8FCBF3}
+@media (prefers-color-scheme: light){.g0{stop-color:#F4F9FE}.g1{stop-color:#E3F0FB}.g2{stop-color:#CFE5F8}.l2{stop-color:#8FCBF3}}
+</style>
+<defs>
+<linearGradient id="grund" x1="0" y1="0" x2="1" y2="1"><stop class="g0" offset="0"/><stop class="g1" offset=".55"/><stop class="g2" offset="1"/></linearGradient>
+<radialGradient id="licht1" cx=".78" cy=".2" r=".55"><stop class="l1" offset="0" stop-opacity=".38"/><stop class="l1" offset="1" stop-opacity="0"/></radialGradient>
+<radialGradient id="licht2" cx=".15" cy=".85" r=".6"><stop class="l2" offset="0" stop-opacity=".45"/><stop class="l2" offset="1" stop-opacity="0"/></radialGradient>
+<radialGradient id="licht3" cx=".5" cy=".55" r=".35"><stop class="l3" offset="0" stop-opacity=".12"/><stop class="l3" offset="1" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1600" height="1000" fill="url(#grund)"/>
+<rect width="1600" height="1000" fill="url(#licht1)"/>
+<rect width="1600" height="1000" fill="url(#licht2)"/>
+<rect width="1600" height="1000" fill="url(#licht3)"/>
+</svg>`
+
 const labels = new Map<string, string>()
 
 // The source of truth: the session's real task list, read straight from TaskList.
@@ -176,7 +198,23 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const r = await next(e)
     if ((await read($, progress)).isActive) startTick($)
+    await $.command.register({ name: 'glas-aus', description: 'Babyblau-Hintergrund in dieser Sitzung ausschalten' })
+    if (!(await read($, backdropOff))) await $.ui.backdrop({ id: 'babyblau', glass: { blur: 28, opacity: 0.22, tint: '#0F141E' } })
     return r
+  })
+
+  on('command.run', { command: 'glas-aus' }, async $ => {
+    await update($, backdropOff, () => true)
+    await $.ui.backdrop(undefined)
+
+    return { text: 'Hintergrund aus.' }
+  })
+
+  on('ui.render', { component: 'Backdrop' }, async ($, e, next) => {
+    if (e.props.plugin !== 'glass-progress' || e.props.id !== 'babyblau') return next(e)
+    const els = $.ui.resolve(e)
+    if (!('Svg' in els)) return next(e)
+    return <els.Svg source={BACKDROP} alt="Dunkler Babyblau-Verlauf" />
   })
 
   on('turn.start', async ($, e, next) => {

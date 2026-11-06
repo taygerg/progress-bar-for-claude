@@ -1,1 +1,1 @@
-{ "name": "glass-progress", "version": "0.1.5", "description": "Liquid-Glass-Fortschrittsbalken über der Eingabe: Fortschritt von Claude und geschätzte Restzeit", "license": "MIT", "author": { "name": "Tayger" }, "types": "./types/index.d.ts" }
+{ "name": "glass-progress", "version": "0.1.6", "description": "Liquid-Glass-Fortschrittsbalken über der Eingabe: Fortschritt von Claude und geschätzte Restzeit", "license": "MIT", "author": { "name": "Tayger" }, "types": "./types/index.d.ts" }

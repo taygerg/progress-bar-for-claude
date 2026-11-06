@@ -14,6 +14,6 @@ export type Progress = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'glass-progress': { progress: Progress }
+    'glass-progress': { progress: Progress; backdropOff: boolean }
   }
 }

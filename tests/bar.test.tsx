@@ -227,3 +227,45 @@ test('Sehr lange Namen mit Emoji werden nie mitten im Zeichen gekürzt', { timeo
     await $.tool.call({ tool: 'TaskUpdate', taskId: id, status: 'completed' } as never)
   }
 })
+
+test('Sitzungsstart legt den Babyblau-Hintergrund, /glas-aus nimmt ihn weg und bleibt aus', { timeoutMs: 60_000 }, async ($, on) => {
+  const gesetzt: unknown[] = []
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('command.register', () => ({ value: { command: 'glas-aus' } }))
+  on('ui.backdrop', (_, e: any) => {
+    gesetzt.push(e === undefined || e?.backdrop === undefined && !('id' in (e ?? {})) ? null : e?.backdrop ?? e)
+    return { value: { isDrawn: true, requestId: 'backdrop' } }
+  })
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(gesetzt.length).toBe(1)
+  expect(JSON.stringify(gesetzt[0])).toBe(JSON.stringify({ id: 'babyblau', glass: { blur: 28, opacity: 0.22, tint: '#0F141E' } }))
+
+  const mount = async (plugin: string, id: string) => {
+    const ui = await ($ as any).ui.mount({
+      plugin: 'glass-progress', component: 'Backdrop', requestId: 'backdrop', surface: 'desktop',
+      props: { id, plugin, glass: { blur: 28, opacity: 0.22 } },
+    })
+    const svg = await ui.find({ type: 'Svg' })
+    const text: any = await ui.find({ type: 'Text' })
+    await ui.unmount()
+    return { svg, text: text?.text }
+  }
+  expect((await mount('glass-progress', 'babyblau')).svg).toBeDefined()
+  // Fremder Hintergrund: durchreichen, nicht übermalen.
+  const fremd = await mount('anderes-plugin', 'lagune')
+  expect(fremd.svg).toBeUndefined()
+  expect(fremd.text).toBe('engine')
+
+  const r: any = await ($ as any).command.run({ command: 'glas-aus' })
+  expect(JSON.stringify(r)).toContain('Hintergrund aus')
+  expect(gesetzt.length).toBe(2)
+  expect(gesetzt[1]).toBe(null)
+
+  // Neuladen (Sitzungsstart läuft erneut): bleibt aus.
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(gesetzt.length).toBe(2)
+})
