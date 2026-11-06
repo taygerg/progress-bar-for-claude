@@ -199,9 +199,31 @@ test('Balken gleitet vom zuletzt gezeigten Anteil, auch wenn ein Schritt dazukom
   // 3 von 5 gezeigt; jetzt kommt ein Schritt dazu: 3 von 6.
   await $.tool.call({ tool: 'TaskCreate', subject: 'F', description: 'F' } as never)
   const q = await quelle()
-  expect(q).toContain('@keyframes gw{from{width:304.8px}}') // 3/5 von 508 px
-  expect(q).toContain('width="254"') // 3/6 von 508 px
+  expect(q).toContain('@keyframes gw{from{width:333.6px}}') // 3/5 von 556 px
+  expect(q).toContain('width="278"') // 3/6 von 556 px
   // Nur die Uhr läuft: gleiche Quelle, keine neue Animation.
   await clock.advance(61_000)
   expect(await quelle()).toBe(q)
+})
+
+test('Sehr lange Namen mit Emoji werden nie mitten im Zeichen gekürzt', { timeoutMs: 120_000 }, async ($, on) => {
+  mock.clock(on, { now: 1_800_000_000_000 })
+  engine(on)
+  await $.turn.start({ text: 'los', turnId: 't1' } as never)
+  const halb = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
+  // Viele Längen, damit jeder Schnittpunkt einmal vorkommt.
+  for (let n = 20; n <= 60; n++) {
+    const id = String(n - 19)
+    const lang = 'a' + '🚀'.repeat(n)
+    await $.tool.call({ tool: 'TaskCreate', subject: 'X' + n, description: 'X', activeForm: lang } as never)
+    await $.tool.call({ tool: 'TaskUpdate', taskId: id, status: 'in_progress' } as never)
+    const ui = await ($ as any).ui.mount({ ...BAND, surface: 'desktop' })
+    const svg: any = await ui.find({ type: 'Svg' })
+    await ui.unmount()
+    const q = String(svg?.props?.source ?? svg?.source ?? '')
+    expect(halb.test(q)).toBe(false)
+    expect(q).not.toContain('\ufffd') // ein halbes Zeichen kommt als Ersatzzeichen an
+    expect(String(svg?.props?.alt ?? svg?.alt ?? '')).toContain(lang)
+    await $.tool.call({ tool: 'TaskUpdate', taskId: id, status: 'completed' } as never)
+  }
 })

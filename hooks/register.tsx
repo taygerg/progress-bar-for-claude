@@ -8,8 +8,8 @@ const progress = atom({ plugin: 'glass-progress', key: 'progress' } as const, ID
 
 type Task = { id: string; subject: string; status: string }
 
-const W = 520
-const H = 20
+const W = 600
+const H = 56
 
 // Time left: average time per finished step this turn × steps left, minus what the
 // current step has already used. No guess before the first step is done here.
@@ -22,43 +22,80 @@ function etaText(p: Progress): string {
   return 'dauert länger als geschätzt'
 }
 
-function bar(fraction: number | null, from: number | null = fraction): string {
-  const x = 6
-  const y = 6
-  const w = W - 12
-  const h = 8
-  const fw = fraction === null ? 0 : Math.max(h, w * Math.min(1, fraction))
-  // Glides from the last shown count to this one (once, when the count changes).
-  const ffw = from === null || fraction === null ? fw : Math.max(h, w * Math.min(1, from))
+const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+// Rough text width in px for the system font: SVG text cannot be measured here.
+function textWidth(t: string, px: number): number {
+  let u = 0
+  for (const c of t) {
+    const cp = c.codePointAt(0) ?? 0
+    u +=
+      cp > 0xffff ? 1.3 // emoji and other astral symbols
+      : cp > 0x24f ? 1.05 // CJK, dashes, symbols, other scripts: count them wide
+      : /[iljtfr.,:;'!| ]/.test(c) ? 0.3
+      : /[mwMW@%ŴŵŒœÆæ]/.test(c) ? 0.95
+      : /[A-ZÄÖÜ0-9#&]/.test(c) ? 0.68
+      : 0.56
+  }
+  return u * px
+}
+
+// Cut whole characters (emoji and joined emoji stay intact), then add "…".
+function fit(t: string, px: number, max: number): string {
+  if (textWidth(t, px) <= max) return t
+  const parts =
+    typeof Intl !== 'undefined' && 'Segmenter' in Intl
+      ? Array.from(new Intl.Segmenter().segment(t), x => x.segment)
+      : Array.from(t)
+  while (parts.length > 1 && textWidth(parts.join('') + '…', px) > max) parts.pop()
+  return parts.join('').trimEnd() + '…'
+}
+
+// One liquid-glass pill: the step and its count on top, a slim bar below that
+// glides from the share shown last to the new one (once, when the count changes).
+function pill(fraction: number, from: number, current: string, right: string): string {
+  const pad = 22
+  const bx = pad
+  const by = 40
+  const bw = W - 2 * pad
+  const bh = 6
+  const r1 = (n: number) => Math.round(n * 10) / 10
+  const fw = r1(Math.max(bh, bw * Math.min(1, fraction)))
+  const ffw = r1(Math.max(bh, bw * Math.min(1, from)))
+  const rightText = fit(right, 12, bw * 0.6)
+  const leftText = fit(current, 13 * 1.1, bw - textWidth(rightText, 12) - 28)
   const glide =
     ffw === fw
       ? ''
-      : `<style>
-    .fl,.hi{animation:.45s cubic-bezier(.32,.72,0,1) both}
-    .fl{animation-name:gw}.hi{animation-name:gh}
-    @keyframes gw{from{width:${ffw}px}}
-    @keyframes gh{from{width:${Math.max(0, ffw - 6)}px}}
-    @media (prefers-reduced-motion: reduce){.fl,.hi{animation:none}}
-  </style>`
-  const fill =
-    fraction === null
-      ? `<rect x="${x}" y="${y}" width="120" height="${h}" rx="6" fill="url(#f)" filter="url(#g)">
-           <animate attributeName="x" values="${x - 120};${x + w};${x - 120}" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1;.45 0 .55 1"/>
-         </rect>`
-      : `<rect class="fl" x="${x}" y="${y}" width="${fw}" height="${h}" rx="4" fill="url(#f)" filter="url(#g)">
-         </rect>
-         <rect class="hi" x="${x + 3}" y="${y + 1}" width="${Math.max(0, fw - 6)}" height="2.5" rx="1.25" fill="url(#hl)"/>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${glide}
+      : `.fl,.hi{animation:.45s cubic-bezier(.32,.72,0,1) both}
+  .fl{animation-name:gw}.hi{animation-name:gh}
+  @keyframes gw{from{width:${ffw}px}}
+  @keyframes gh{from{width:${r1(Math.max(0, ffw - 4))}px}}
+  @media (prefers-reduced-motion: reduce){.fl,.hi{animation:none}}`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  <style>
+  text{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif}
+  .a{fill:#F5F5F7}.b{fill:#D1D1D6}.glas{fill:url(#gl);stroke:rgba(255,255,255,.16)}.kante{stroke:url(#ka)}
+  .spur{fill:rgba(255,255,255,.10)}
+  .f1{stop-color:#ffffff}.f2{stop-color:#eef0ff}.f3{stop-color:#c7cdf5}
+  @media (prefers-color-scheme: light){.a{fill:#1D1D1F}.b{fill:#5E5E63}.glas{fill:url(#gh2);stroke:rgba(0,0,0,.08)}.spur{fill:rgba(0,0,0,.08)}.f1{stop-color:#9aa5f2}.f2{stop-color:#7884e3}.f3{stop-color:#5f6bd1}}
+  ${glide}
+  </style>
   <defs>
-    <linearGradient id="t" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset="1" stop-color="#fff" stop-opacity=".10"/></linearGradient>
-    <linearGradient id="ts" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".10"/><stop offset="1" stop-color="#fff" stop-opacity=".35"/></linearGradient>
-    <linearGradient id="f" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".55" stop-color="#eef0ff"/><stop offset="1" stop-color="#c7cdf5"/></linearGradient>
+    <linearGradient id="gl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".13"/><stop offset="1" stop-color="#fff" stop-opacity=".04"/></linearGradient>
+    <linearGradient id="gh2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".85"/><stop offset="1" stop-color="#fff" stop-opacity=".55"/></linearGradient>
+    <linearGradient id="ka" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset=".35" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="f" x1="0" y1="0" x2="0" y2="1"><stop class="f1" offset="0"/><stop class="f2" offset=".55"/><stop class="f3" offset="1"/></linearGradient>
     <linearGradient id="hl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-    <filter id="g" x="-20%" y="-150%" width="140%" height="400%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-    <clipPath id="c"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4"/></clipPath>
+    <filter id="g" x="-20%" y="-200%" width="140%" height="500%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   </defs>
-  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="url(#t)" stroke="url(#ts)" stroke-width=".8"/>
-  ${fraction === null ? `<g clip-path="url(#c)">${fill}</g>` : fill}
+  <rect class="glas" x="1" y="1" width="${W - 2}" height="${H - 2}" rx="${(H - 2) / 2}" stroke-width="1"/>
+  <rect class="kante" x="1.5" y="1.5" width="${W - 3}" height="${H - 3}" rx="${(H - 3) / 2}" fill="none" stroke-width="1"/>
+  <text class="a" x="${pad}" y="27" font-size="13" font-weight="600">${esc(leftText)}</text>
+  <text class="b" x="${W - pad}" y="27" font-size="12" text-anchor="end">${esc(rightText)}</text>
+  <rect class="spur" x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="${bh / 2}"/>
+  <rect class="fl" x="${bx}" y="${by}" width="${fw}" height="${bh}" rx="${bh / 2}" fill="url(#f)" filter="url(#g)"/>
+  <rect class="hi" x="${bx + 2}" y="${by + 0.8}" width="${r1(Math.max(0, fw - 4))}" height="2" rx="1" fill="url(#hl)"/>
 </svg>`
 }
 
@@ -201,16 +238,22 @@ export const register: Register = on => {
     const fraction = p.done / p.total
     const eta = etaText(p)
     const step = `Schritt ${p.done + 1} von ${p.total}`
-    const alt = `${p.done} von ${p.total} Schritten erledigt, ${eta}`
+    const alt = `${p.current || 'Claude arbeitet'}, ${step}, ${p.done} von ${p.total} erledigt, ${eta}`
     const filled = Math.round(fraction * 20)
 
     return (
       <Box flexDirection="column" alignItems="center" width="100%">
         {e.surface !== 'terminal' && 'Svg' in els ? (
-          <els.Svg source={bar(fraction, Math.min(p.prevShown ?? fraction, 1))} alt={alt} width={W} height={H} />
+          <els.Svg
+            source={pill(fraction, Math.min(p.prevShown ?? fraction, 1), p.current || 'Claude arbeitet', step + ' · ' + eta)}
+            alt={alt}
+            width={W}
+            height={H}
+          />
         ) : (
           <Text>{'▰'.repeat(filled) + '▱'.repeat(20 - filled)}</Text>
         )}
+        {!(e.surface !== 'terminal' && 'Svg' in els) ? (
         <Box flexDirection="row" justifyContent="center" width="100%" gap={1}>
           <Box flexShrink={1} minWidth={0}>
             <Text wrap="truncate-end">{p.current || 'Claude arbeitet'}</Text>
@@ -219,6 +262,7 @@ export const register: Register = on => {
             <Text dimColor>{'· ' + step + ' · ' + eta}</Text>
           </Box>
         </Box>
+        ) : null}
       </Box>
     )
   })
