@@ -11,9 +11,15 @@ type Task = { id: string; subject: string; status: string }
 const W = 520
 const H = 26
 
-function fmt(ms: number): string {
-  const s = Math.max(0, Math.ceil(ms / 1000))
-  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0')
+// Time left: average time per finished step this turn × steps left, minus what the
+// current step has already used. No guess before the first step is done here.
+// Whole minutes, so the bar only redraws when the text really changes.
+function etaText(p: Progress): string {
+  if (p.doneInTurn === 0) return 'Restzeit nach dem ersten Schritt'
+  const left = (p.workMs / p.doneInTurn) * (p.total - p.done) - (p.now - p.lastDoneAt)
+  if (left >= 60_000) return 'noch ca. ' + Math.ceil(left / 60_000) + ' Min.'
+  if (left > 0) return 'noch unter 1 Min.'
+  return 'dauert länger als geschätzt'
 }
 
 function bar(fraction: number | null): string {
@@ -29,7 +35,6 @@ function bar(fraction: number | null): string {
            <animate attributeName="x" values="${x - 120};${x + w};${x - 120}" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1;.45 0 .55 1"/>
          </rect>`
       : `<rect x="${x}" y="${y}" width="${fw}" height="${h}" rx="6" fill="url(#f)" filter="url(#g)">
-           <animate attributeName="opacity" values=".92;1;.92" dur="2.2s" repeatCount="indefinite"/>
          </rect>
          <rect x="${x + 4}" y="${y + 1.5}" width="${Math.max(0, fw - 8)}" height="3" rx="1.5" fill="url(#hl)"/>
          <g transform="translate(${kx - 17} 2)">
@@ -105,13 +110,20 @@ function applyCounts(p: Progress, now: number, total: number, done: number, curr
 
 let stopTick: (() => void) | undefined
 
-// Keeps `now` moving once a second while Claude works, so the time left counts down.
+// Keeps `now` moving while Claude works, but writes (and so redraws) only when the
+// time-left text changes: a redraw every second made the bar flicker.
 function startTick($: EngineInterface): void {
   stopTick?.()
   const timer = $.clock.every(1000, () => {
-    void $.clock.now().then(n => update($, progress, p => ({ ...p, now: n })))
+    void tick($)
   })
   stopTick = () => timer.cancel()
+}
+
+async function tick($: EngineInterface): Promise<void> {
+  const n = await $.clock.now()
+  const p = await read($, progress)
+  if (etaText({ ...p, now: n }) !== etaText(p)) await update($, progress, q => ({ ...q, now: n }))
 }
 
 export const register: Register = on => {
@@ -180,23 +192,13 @@ export const register: Register = on => {
     const els = $.ui.resolve(e)
     const { Box, Text } = els
     const fraction = p.done / p.total
-    const remaining = p.total - p.done
-
-    // Time left: average time per finished step this turn × steps left, minus what the
-    // current step has already used. No guess before the first step is done here.
-    let eta = 'Restzeit nach dem ersten Schritt'
-    if (p.doneInTurn > 0) {
-      const perStep = p.workMs / p.doneInTurn
-      const intoCurrent = p.now - p.lastDoneAt
-      const left = perStep * remaining - intoCurrent
-      eta = left > 0 ? 'noch ca. ' + fmt(left) : 'dauert länger als geschätzt'
-    }
+    const eta = etaText(p)
     const label = `${p.current || 'Claude arbeitet'} · Schritt ${p.done + 1} von ${p.total}`
     const alt = `${p.done} von ${p.total} Schritten erledigt, ${eta}`
     const filled = Math.round(fraction * 20)
 
     return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" alignItems="center">
         {e.surface !== 'terminal' && 'Svg' in els ? (
           <els.Svg source={bar(fraction)} alt={alt} width={W} height={H} isInteractive />
         ) : (

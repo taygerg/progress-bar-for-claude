@@ -67,12 +67,12 @@ test('vier Schritte: Bar, Schritt X von Y, Restzeit, verschwindet am Ende', { ti
   await $.tool.call({ tool: 'TaskUpdate', taskId: '2', status: 'in_progress' } as never)
   b = await band($, 'terminal')
   expect(b.all).toContain('Zwei läuft · Schritt 2 von 4')
-  expect(b.all).toContain('noch ca. 1:00') // 3 Schritte × 20 s
+  expect(b.all).toContain('noch ca. 1 Min.') // 3 Schritte × 20 s
   expect(b.all).toContain('▰')
 
   // 10 s in Schritt 2: noch 50 s.
   await clock.advance(10_000)
-  expect((await band($, 'terminal')).all).toContain('noch ca. 0:50')
+  expect((await band($, 'terminal')).all).toContain('noch unter 1 Min.')
 
   // Schritt 2 überzieht: 70 s statt 20 s.
   await clock.advance(60_000)
@@ -100,7 +100,7 @@ test('Liste aus einem früheren Zug, Schritt direkt abgehakt: echte Dauer statt 
   await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'completed' } as never)
   const b = await band($, 'terminal')
   expect(b.all).toContain('Schritt 2 von 3')
-  expect(b.all).toContain('noch ca. 1:00') // 2 Schritte × 30 s
+  expect(b.all).toContain('noch ca. 1 Min.') // 2 Schritte × 30 s
 })
 
 test('Subagent endet mitten im Zug: Bar bleibt', { timeoutMs: 60_000 }, async ($, on) => {
@@ -136,7 +136,7 @@ test('Fertige Liste bleibt in TaskList: alte Schritte zählen nicht als in diese
   await $.tool.call({ tool: 'TaskUpdate', taskId: '3', status: 'completed' } as never)
   b = await band($, 'terminal')
   expect(b.all).toContain('Schritt 4 von 5')
-  expect(b.all).toContain('noch ca. 0:20') // 2 Schritte × 10 s
+  expect(b.all).toContain('noch unter 1 Min.') // 2 Schritte × 10 s
 })
 
 test('Schritt abgehakt, noch keiner läuft: kein alter Schrittname', { timeoutMs: 60_000 }, async ($, on) => {
@@ -163,7 +163,7 @@ test('Fortgesetzte Sitzung: offene Liste erscheint beim Zugstart, erster Schritt
   expect((await band($, 'terminal')).all).toContain('A · Schritt 1 von 3')
   await clock.advance(15_000)
   await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'completed' } as never)
-  expect((await band($, 'terminal')).all).toContain('noch ca. 0:30')
+  expect((await band($, 'terminal')).all).toContain('noch unter 1 Min.')
 })
 
 test('TodoWrite eines Subagenten überschreibt die Hauptliste nicht', { timeoutMs: 60_000 }, async ($, on) => {
