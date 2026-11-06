@@ -1,0 +1,5 @@
+{
+  "name": "progress-bar-for-claude",
+  "owner": { "name": "Tayger" },
+  "plugins": [{ "name": "glass-progress", "source": "./" }]
+}
