@@ -9,7 +9,7 @@ const progress = atom({ plugin: 'glass-progress', key: 'progress' } as const, ID
 type Task = { id: string; subject: string; status: string }
 
 const W = 520
-const H = 26
+const H = 20
 
 // Time left: average time per finished step this turn × steps left, minus what the
 // current step has already used. No guess before the first step is done here.
@@ -23,49 +23,41 @@ function etaText(p: Progress): string {
 }
 
 function bar(fraction: number | null, from: number | null = fraction): string {
-  const x = 4
-  const y = 7
-  const w = W - 8
-  const h = 12
+  const x = 6
+  const y = 6
+  const w = W - 12
+  const h = 8
   const fw = fraction === null ? 0 : Math.max(h, w * Math.min(1, fraction))
-  const kx = x + fw
   // Glides from the last shown count to this one (once, when the count changes).
   const ffw = from === null || fraction === null ? fw : Math.max(h, w * Math.min(1, from))
   const glide =
     ffw === fw
       ? ''
       : `<style>
-    .fl,.hi,.kn{animation:.45s cubic-bezier(.32,.72,0,1) both}
-    .fl{animation-name:gw}.hi{animation-name:gh}.kn{animation-name:gk}
+    .fl,.hi{animation:.45s cubic-bezier(.32,.72,0,1) both}
+    .fl{animation-name:gw}.hi{animation-name:gh}
     @keyframes gw{from{width:${ffw}px}}
-    @keyframes gh{from{width:${Math.max(0, ffw - 8)}px}}
-    @keyframes gk{from{transform:translateX(${ffw - fw}px)}}
-    @media (prefers-reduced-motion: reduce){.fl,.hi,.kn{animation:none}}
+    @keyframes gh{from{width:${Math.max(0, ffw - 6)}px}}
+    @media (prefers-reduced-motion: reduce){.fl,.hi{animation:none}}
   </style>`
   const fill =
     fraction === null
       ? `<rect x="${x}" y="${y}" width="120" height="${h}" rx="6" fill="url(#f)" filter="url(#g)">
            <animate attributeName="x" values="${x - 120};${x + w};${x - 120}" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1;.45 0 .55 1"/>
          </rect>`
-      : `<rect class="fl" x="${x}" y="${y}" width="${fw}" height="${h}" rx="6" fill="url(#f)" filter="url(#g)">
+      : `<rect class="fl" x="${x}" y="${y}" width="${fw}" height="${h}" rx="4" fill="url(#f)" filter="url(#g)">
          </rect>
-         <rect class="hi" x="${x + 4}" y="${y + 1.5}" width="${Math.max(0, fw - 8)}" height="3" rx="1.5" fill="url(#hl)"/>
-         <g class="kn"><g transform="translate(${kx - 17} 2)">
-           <rect width="34" height="22" rx="11" fill="url(#k)" stroke="url(#ks)" stroke-width=".8"/>
-           <rect x="6" y="2.5" width="22" height="6" rx="3" fill="#ffffff" opacity=".55"/>
-         </g></g>`
+         <rect class="hi" x="${x + 3}" y="${y + 1}" width="${Math.max(0, fw - 6)}" height="2.5" rx="1.25" fill="url(#hl)"/>`
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${glide}
   <defs>
     <linearGradient id="t" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset="1" stop-color="#fff" stop-opacity=".10"/></linearGradient>
     <linearGradient id="ts" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".10"/><stop offset="1" stop-color="#fff" stop-opacity=".35"/></linearGradient>
     <linearGradient id="f" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".55" stop-color="#eef0ff"/><stop offset="1" stop-color="#c7cdf5"/></linearGradient>
     <linearGradient id="hl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-    <linearGradient id="k" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".42"/><stop offset=".5" stop-color="#fff" stop-opacity=".12"/><stop offset="1" stop-color="#fff" stop-opacity=".22"/></linearGradient>
-    <linearGradient id="ks" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".5" stop-color="#fff" stop-opacity=".25"/><stop offset="1" stop-color="#fff" stop-opacity=".7"/></linearGradient>
     <filter id="g" x="-20%" y="-150%" width="140%" height="400%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-    <clipPath id="c"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6"/></clipPath>
+    <clipPath id="c"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4"/></clipPath>
   </defs>
-  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="url(#t)" stroke="url(#ts)" stroke-width=".8"/>
+  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="url(#t)" stroke="url(#ts)" stroke-width=".8"/>
   ${fraction === null ? `<g clip-path="url(#c)">${fill}</g>` : fill}
 </svg>`
 }
@@ -208,20 +200,24 @@ export const register: Register = on => {
     const { Box, Text } = els
     const fraction = p.done / p.total
     const eta = etaText(p)
-    const label = `${p.current || 'Claude arbeitet'} · Schritt ${p.done + 1} von ${p.total}`
+    const step = `Schritt ${p.done + 1} von ${p.total}`
     const alt = `${p.done} von ${p.total} Schritten erledigt, ${eta}`
     const filled = Math.round(fraction * 20)
 
     return (
-      <Box flexDirection="column" alignItems="center">
+      <Box flexDirection="column" alignItems="center" width="100%">
         {e.surface !== 'terminal' && 'Svg' in els ? (
           <els.Svg source={bar(fraction, Math.min(p.prevShown ?? fraction, 1))} alt={alt} width={W} height={H} />
         ) : (
           <Text>{'▰'.repeat(filled) + '▱'.repeat(20 - filled)}</Text>
         )}
-        <Box>
-          <Text>{label}</Text>
-          <Text dimColor>{'  ' + eta}</Text>
+        <Box flexDirection="row" justifyContent="center" width="100%" gap={1}>
+          <Box flexShrink={1} minWidth={0}>
+            <Text wrap="truncate-end">{p.current || 'Claude arbeitet'}</Text>
+          </Box>
+          <Box flexShrink={0}>
+            <Text dimColor>{'· ' + step + ' · ' + eta}</Text>
+          </Box>
         </Box>
       </Box>
     )

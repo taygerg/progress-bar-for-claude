@@ -57,7 +57,7 @@ test('vier Schritte: Bar, Schritt X von Y, Restzeit, verschwindet am Ende', { ti
   }
   await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'in_progress' } as never)
   let b = await band($, 'terminal')
-  expect(b.all).toContain('Eins läuft · Schritt 1 von 4')
+  expect(b.all).toContain('Eins läuft | · Schritt 1 von 4')
   expect(b.all).toContain('Restzeit nach dem ersten Schritt')
   expect((await band($, 'desktop')).svg).toBeDefined()
 
@@ -66,7 +66,7 @@ test('vier Schritte: Bar, Schritt X von Y, Restzeit, verschwindet am Ende', { ti
   await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'completed' } as never)
   await $.tool.call({ tool: 'TaskUpdate', taskId: '2', status: 'in_progress' } as never)
   b = await band($, 'terminal')
-  expect(b.all).toContain('Zwei läuft · Schritt 2 von 4')
+  expect(b.all).toContain('Zwei läuft | · Schritt 2 von 4')
   expect(b.all).toContain('noch ca. 1 Min.') // 3 Schritte × 20 s
   expect(b.all).toContain('▰')
 
@@ -129,7 +129,7 @@ test('Fertige Liste bleibt in TaskList: alte Schritte zählen nicht als in diese
   for (const s of ['C', 'D', 'E']) await $.tool.call({ tool: 'TaskCreate', subject: s, description: s, activeForm: s + ' läuft' } as never)
   await $.tool.call({ tool: 'TaskUpdate', taskId: '3', status: 'in_progress' } as never)
   let b = await band($, 'terminal')
-  expect(b.all).toContain('C läuft · Schritt 3 von 5')
+  expect(b.all).toContain('C läuft | · Schritt 3 von 5')
   expect(b.all).toContain('Restzeit nach dem ersten Schritt')
 
   await clock.advance(10_000)
@@ -147,7 +147,7 @@ test('Schritt abgehakt, noch keiner läuft: kein alter Schrittname', { timeoutMs
   await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'in_progress' } as never)
   await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'completed' } as never)
   const b = await band($, 'terminal')
-  expect(b.all).toContain('Claude arbeitet · Schritt 2 von 3')
+  expect(b.all).toContain('Claude arbeitet | · Schritt 2 von 3')
   expect(b.all).not.toContain('Eins läuft')
 })
 
@@ -160,7 +160,7 @@ test('Fortgesetzte Sitzung: offene Liste erscheint beim Zugstart, erster Schritt
     { id: '3', subject: 'C', status: 'pending' },
   ])
   await $.turn.start({ text: 'weiter', turnId: 't1' } as never)
-  expect((await band($, 'terminal')).all).toContain('A · Schritt 1 von 3')
+  expect((await band($, 'terminal')).all).toContain('A | · Schritt 1 von 3')
   await clock.advance(15_000)
   await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'completed' } as never)
   expect((await band($, 'terminal')).all).toContain('noch unter 1 Min.')
@@ -181,7 +181,7 @@ test('TodoWrite eines Subagenten überschreibt die Hauptliste nicht', { timeoutM
   const todo = (c: string, st: string) => ({ content: c, status: st, activeForm: c + ' läuft' })
   await $.tool.call({ tool: 'TodoWrite', todos: [todo('A', 'in_progress'), todo('B', 'pending'), todo('C', 'pending')] } as never)
   await $.tool.call({ tool: 'TodoWrite', agentId: 'sub1', todos: [todo('X', 'completed'), todo('Y', 'completed')] } as never)
-  expect((await band($, 'terminal')).all).toContain('A läuft · Schritt 1 von 3')
+  expect((await band($, 'terminal')).all).toContain('A läuft | · Schritt 1 von 3')
 })
 
 test('Balken gleitet vom zuletzt gezeigten Anteil, auch wenn ein Schritt dazukommt', { timeoutMs: 60_000 }, async ($, on) => {
@@ -199,8 +199,8 @@ test('Balken gleitet vom zuletzt gezeigten Anteil, auch wenn ein Schritt dazukom
   // 3 von 5 gezeigt; jetzt kommt ein Schritt dazu: 3 von 6.
   await $.tool.call({ tool: 'TaskCreate', subject: 'F', description: 'F' } as never)
   const q = await quelle()
-  expect(q).toContain('@keyframes gw{from{width:307.2px}}') // 3/5 von 512 px
-  expect(q).toContain('width="256"') // 3/6 von 512 px
+  expect(q).toContain('@keyframes gw{from{width:304.8px}}') // 3/5 von 508 px
+  expect(q).toContain('width="254"') // 3/6 von 508 px
   // Nur die Uhr läuft: gleiche Quelle, keine neue Animation.
   await clock.advance(61_000)
   expect(await quelle()).toBe(q)
