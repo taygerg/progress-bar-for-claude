@@ -12,7 +12,7 @@ const W = 520
 const H = 26
 
 function fmt(ms: number): string {
-  const s = Math.max(0, Math.round(ms / 1000))
+  const s = Math.max(0, Math.ceil(ms / 1000))
   return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0')
 }
 
@@ -55,31 +55,46 @@ function bar(fraction: number | null): string {
 const labels = new Map<string, string>()
 
 // The source of truth: the session's real task list, read straight from TaskList.
+// TaskUpdate may run in parallel: an answer never overwrites one that was asked for later.
+let syncSeq = 0
+let appliedSeq = 0
+
 async function sync($: EngineInterface): Promise<void> {
+  const mine = ++syncSeq
   let tasks: Task[] | undefined
-  try {
-    const r: any = await $.tool.call({ tool: 'TaskList' })
-    tasks = r?.result?.tasks
-  } catch {
-    tasks = undefined
+  // One retry: a failed read would otherwise leave the bar on an older count.
+  for (let attempt = 0; attempt < 2 && !Array.isArray(tasks); attempt++) {
+    try {
+      const r: any = await $.tool.call({ tool: 'TaskList' })
+      tasks = r?.result?.tasks
+    } catch {
+      tasks = undefined
+    }
   }
   if (!Array.isArray(tasks)) return
   const now = await $.clock.now()
+  if (mine < appliedSeq) return
+  appliedSeq = mine
   const total = tasks.length
   const done = tasks.filter(t => t.status === 'completed').length
   const active = tasks.find(t => t.status === 'in_progress')
-  await update($, progress, p => applyCounts(p, now, total, done, active ? labels.get(active.id) ?? active.subject : ''))
+  const current = active ? labels.get(active.id) ?? active.subject : ''
+  // Checked again inside: a newer answer may have been applied while this write waited.
+  await update($, progress, p => (mine < appliedSeq ? p : applyCounts(p, now, total, done, current)))
 }
 
 function applyCounts(p: Progress, now: number, total: number, done: number, current: string): Progress {
-  const newlyDone = Math.max(0, done - p.done)
-  const firstStartAt = p.firstStartAt || now
+  // A list met for the first time (new, or older than this turn) is the baseline:
+  // its finished steps were not finished in this turn.
+  const newlyDone = p.total === 0 ? 0 : Math.max(0, done - p.done)
+  // Work starts when the turn starts, or when the list first appears within it.
+  const firstStartAt = p.total === 0 && total > 0 ? now : p.firstStartAt || now
   return {
     ...p,
     now,
     total,
     done,
-    current: current || p.current,
+    current,
     firstStartAt,
     // Only time spent while steps were actually being finished counts as work.
     workMs: newlyDone > 0 ? p.workMs + (now - (p.lastDoneAt || firstStartAt)) : p.workMs,
@@ -88,27 +103,43 @@ function applyCounts(p: Progress, now: number, total: number, done: number, curr
   }
 }
 
-export const register: Register = on => {
-  let stopTick: (() => void) | undefined
+let stopTick: (() => void) | undefined
 
-  on('prompt.submit', async ($, e, next) => {
+// Keeps `now` moving once a second while Claude works, so the time left counts down.
+function startTick($: EngineInterface): void {
+  stopTick?.()
+  const timer = $.clock.every(1000, () => {
+    void $.clock.now().then(n => update($, progress, p => ({ ...p, now: n })))
+  })
+  stopTick = () => timer.cancel()
+}
+
+export const register: Register = on => {
+
+  // A reload drops the module's timer: start it again while Claude is still working.
+  on('session.start', async ($, e, next) => {
+    const r = await next(e)
+    if ((await read($, progress)).isActive) startTick($)
+    return r
+  })
+
+  on('turn.start', async ($, e, next) => {
+    if (e.agentId) return next(e)
     const t = await $.clock.now()
     await update($, progress, p => {
       const finished = p.total > 0 && p.done >= p.total
       const base = finished ? IDLE : p
-      return { ...base, isActive: true, now: t, firstStartAt: 0, lastDoneAt: 0, doneInTurn: 0, workMs: 0 }
+      return { ...base, isActive: true, now: t, firstStartAt: t, lastDoneAt: 0, doneInTurn: 0, workMs: 0 }
     })
-    stopTick?.()
-    const timer = $.clock.every(1000, () => {
-      void $.clock.now().then(n => update($, progress, p => ({ ...p, now: n })))
-    })
-    stopTick = () => timer.cancel()
+    await sync($)
+    startTick($)
     return next(e)
   }).catch(($, e, next) => next(e))
 
   on('tool.call', { tool: 'TodoWrite' }, async ($, e, next) => {
     const r = await next(e)
-    const todos = e.todos
+    if (e.agentId || r.isError || !r.result) return r
+    const todos = r.result.newTodos
     const active = todos.find(t => t.status === 'in_progress')
     const now = await $.clock.now()
     await update($, progress, p =>
@@ -133,6 +164,8 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {
+    // A subagent's turn ending is not the end of Claude's answer.
+    if (e.agentId) return next(e)
     stopTick?.()
     stopTick = undefined
     await update($, progress, p => ({ ...p, isActive: false }))
@@ -156,7 +189,7 @@ export const register: Register = on => {
       const perStep = p.workMs / p.doneInTurn
       const intoCurrent = p.now - p.lastDoneAt
       const left = perStep * remaining - intoCurrent
-      eta = left > 5000 ? 'noch ca. ' + fmt(left) : 'dauert länger als geschätzt'
+      eta = left > 0 ? 'noch ca. ' + fmt(left) : 'dauert länger als geschätzt'
     }
     const label = `${p.current || 'Claude arbeitet'} · Schritt ${p.done + 1} von ${p.total}`
     const alt = `${p.done} von ${p.total} Schritten erledigt, ${eta}`
@@ -164,7 +197,7 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column">
-        {'Svg' in els ? (
+        {e.surface !== 'terminal' && 'Svg' in els ? (
           <els.Svg source={bar(fraction)} alt={alt} width={W} height={H} isInteractive />
         ) : (
           <Text>{'▰'.repeat(filled) + '▱'.repeat(20 - filled)}</Text>

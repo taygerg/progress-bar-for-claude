@@ -11,3 +11,11 @@ In einer Claude-Code-Sitzung im Terminal eingeben:
 ```
 
 Danach `y`, um den Marketplace hinzuzufügen, und einen Bereich wählen.
+
+## Aufgabenlisten einschalten
+
+Der Balken liest die Aufgabenliste der Sitzung. Bei aktuellen Modellen schaltet Claude Code die Werkzeuge dafür (TaskCreate, TaskList, TodoWrite) ab, dann erscheint kein Balken. Einschalten in `~/.claude/settings.json`:
+
+```json
+{ "env": { "CLAUDE_CODE_ENABLE_TODO_TOOLS": "1" } }
+```
